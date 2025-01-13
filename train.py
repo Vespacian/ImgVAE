@@ -10,6 +10,7 @@ import torchvision
 import torchvision.transforms as transforms
 import seaborn as sns
 import torch.nn as nn
+import pickle
 
 
 from imgvae import VAE_Conv
@@ -19,56 +20,6 @@ from functions import validate_one_epoch, train_one_epoch
 # from utils.options import get_options
 # from utils.distributions import link_batch
 
-
-# Utility function for plotting
-def plot_losses(losses, opts):
-    # Plot data
-    epoch_range = np.arange(opts.num_epochs)
-    plt.plot(epoch_range, losses['total'], label='Total loss')
-    plt.plot(epoch_range, losses['recon'], label='Reconstruction loss')
-    plt.plot(epoch_range, losses['kl'], label='KL loss')
-
-    # Label plot
-    plt.title(f"Training Loss (h={opts.hidden_dim}, l={opts.latent_dim})")
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.legend()
-
-    # Save plot
-    result_dir = os.path.join(opts.result_dir, 'plots')
-    if not os.path.exists(result_dir):
-        os.makedirs(result_dir)
-    plt.savefig(os.path.join(result_dir, f'losses_{opts.run_name}.png'), format='png')
-    plt.close()
-
-# Utility function for sampling from the VAE
-def plot_samples(model, opts, num_samples=5):
-    # Sample from model
-    model.eval()
-    sequence_length = opts.graph_size
-
-    with torch.no_grad():
-        sampled_sequences = model.sample(num_samples=num_samples, seq_length=sequence_length, device=opts.device)
-
-    # Plot each sequence
-    sampled_sequences_np = sampled_sequences.cpu().numpy()
-    fig, ax = plt.subplots(figsize=(8, 6))
-    for i, seq in enumerate(sampled_sequences_np):
-        x = seq[:, 0]
-        y = seq[:, 1]
-        ax.scatter(x, y, marker='o', label=f"Sample {i+1}")
-
-    # Label plot
-    ax.set_title(f"Sampled Sequences (h={opts.hidden_dim}, l={opts.latent_dim})")
-    ax.grid(True)
-    ax.legend()
-
-    # Save plot
-    result_dir = os.path.join(opts.result_dir, 'plots')
-    if not os.path.exists(result_dir):
-        os.makedirs(result_dir)
-    plt.savefig(os.path.join(result_dir, f'samples_{opts.run_name}.png'), format='png')
-    plt.close()
     
 def run_sample(batch_size, device, model):
     # define transformations
@@ -179,7 +130,33 @@ def run_sample(batch_size, device, model):
     # print(recon_images.shape, mu.shape, log_var.shape)
     # print(recon_images.min().detach().cpu().numpy(), recon_images.max().detach().cpu().numpy())
     
-
+def viz_losses(train_history):
+    with open("VAE_Conv_CIFAR10_training_history.pkl", "wb") as file:
+        pickle.dump(train_history, file)
+    
+    # VAE Training Visualization-
+    plt.figure(figsize = (9, 7))
+    plt.plot([train_history[x]['train_loss'] for x in train_history.keys()], label = 'train_loss')
+    plt.plot([train_history[x]['val_loss'] for x in train_history.keys()], label = 'val_loss')
+    plt.legend(loc = 'best')
+    plt.title("VAE-Convolutional: CIFAR-10 Training Visualizations")
+    plt.show()
+    
+    # VAE Training Visualization-
+    plt.figure(figsize = (9, 7))
+    plt.plot([train_history[x]['train_logvar'] for x in train_history.keys()], label = 'train_logvar')
+    plt.plot([train_history[x]['val_logvar'] for x in train_history.keys()], label = 'val_logvar')
+    plt.legend(loc = 'best')
+    plt.title("VAE-Convolutional: (log_var) CIFAR-10 Training Visualizations")
+    plt.show()
+    
+    # VAE Training Visualization-
+    plt.figure(figsize = (9, 7))
+    plt.plot([train_history[x]['train_mu'] for x in train_history.keys()], label = 'mu_train')
+    plt.plot([train_history[x]['val_mu'] for x in train_history.keys()], label = 'mu_val')
+    plt.legend(loc = 'best')
+    plt.title("VAE-Convolutional: (mu) CIFAR-10 Training Visualizations")
+    plt.show()
     
     
     
@@ -284,6 +261,9 @@ def run():
         f"test loss = {val_epoch_loss:.4f}, train_logvar = {logvar_train:.6f}"
         f", train_mu = {mu_train:.6f}, val_logvar = {logvar_val:.6f} &"
         f" val_mu = {mu_val:.6f}")
+    
+    torch.save(model.state_dict(), 'results/VAE_Conv_CIFAR10_Trained_Weights.pth')
+    viz_losses(train_history)
 
 
 # Program entrypoint
