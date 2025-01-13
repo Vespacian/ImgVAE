@@ -1,40 +1,77 @@
 import torch
 import torch.nn as nn
 
-# from .encoder import Encoder
-# from .decoder import Decoder
+from encoder import Conv6_Encoder
+from decoder import Conv6_Decoder
 
-class ImgVAE(nn.Module):
-    pass
+# get the dims right, 
+# cfar10 - color images, assume 100x100 img for now
+# need convolutional code
+# deconv - the inverse of convolution in the decoder (you should see this in the decoder)
+# in pytorch convo2D - something like that
 
-# class VAE(nn.Module):
-#     def __init__(self):
-#         super(VAE, self).__init__()
-
-#         self.fc1 = nn.Linear(196, 128) #Encoder
-#         self.fc21 = nn.Linear(128, 8) #mu
-#         self.fc22 = nn.Linear(128, 8) #sigma
-
-#         self.fc3 = nn.Linear(8, 128) #Decoder
-#         self.fc4 = nn.Linear(128, 196)
+class VAE_Conv(nn.Module):
+    def __init__(self, latent_space = 5):
+        super(VAE_Conv, self).__init__()
         
-#     def encoder(self, x):
-#         h = torch.tanh(self.fc1(x))
-#         return self.fc21(h), self.fc22(h) # mu, std
+        self.latent_space = latent_space
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        
+        # Encoder-
+        self.encoder = Conv6_Encoder(latent_space = self.latent_space).to(device)
+        
+        # Two additional layers 'hidden2mu' & 'hidden2log' to convert the bottleneck into the μ and σ vectors-
+        self.hidden2mu = nn.Linear(in_features = latent_space, out_features = latent_space, bias = True)
+        self.hidden2log_var = nn.Linear(in_features = latent_space, out_features = latent_space, bias = True)
+        
+        # Decoder-
+        self.decoder = Conv6_Decoder(latent_space = self.latent_space).to(device)
+        
+        
+    def reparameterize(self, mu, log_var):
+        '''
+        Input arguments:
+        1. mu - mean coming from the encoder's latent space
+        2. log_var - log variance coming from the encoder's latent space
+        '''
+        # Compute standard deviation using 'log_var'-
+        std = torch.exp(0.5 * log_var)
+        
+        # 'eps' samples from a normal standard distribution to add
+        # stochasticity to the sampling process-
+        eps = torch.randn_like(std)
+        
+        # Reparameterization trick - sample as if it's from the input
+        # space-
+        sample = mu + (std * eps)
+        
+        return sample
     
-#     def sampling(self, mu, std): # Reparameterization trick
-#         eps1 = torch.randn_like(std)
-#         eps2 = torch.randn_like(std)
-#         return 0.5*((eps1 * std + mu) + (eps2 * std + mu)) # Using two samples to compute expectation over z
+    
+    def forward(self, x):
+        # Encode input data-
+        x = self.encoder(x)
+        # NOTE: The line of code above does NOT give us the latent vector!
+        
+        # print(f"encoder's output x.shape: {x.shape}")
+        
+        mu = self.hidden2mu(x)
+        log_var = self.hidden2log_var(x)
+        
+        # Obtain the latent vector using reparameterization-
+        z = self.reparameterize(mu, log_var)
+        # latent vector 'z' is obtained through reparameterization trick using mu and log_var
+        
+        '''
+        print(f"mu.shape: {mu.shape}, log_var.shape: {log_var.shape} &"
+              f" z.shape: {z.shape}")
+        '''
+        
+        # Decode latent vector-
+        recon_data = torch.sigmoid(self.decoder(z))
+        # recon_data = torch.tanh(self.decoder(z))
+        # x = self.decoder(z)
+        # recon_data = torch.sigmoid(x) # or, tanh
+        
+        return recon_data, mu, log_var
 
-#     def decoder(self, z):
-#         h = torch.tanh(self.fc3(z))
-#         return torch.sigmoid(self.fc4(h)) 
-    
-#     def forward(self, x):
-#         mu, std = self.encoder(x.view(-1, 196))
-#         z = self.sampling(mu, std)
-#         return self.decoder(z), mu, std
-# model = VAE()
-# if torch.cuda.is_available():
-#     model.cuda()
