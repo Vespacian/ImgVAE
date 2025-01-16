@@ -1,5 +1,5 @@
 import torch.nn as nn
-from cnn_block import cnn_block
+from model.cnn_block import cnn_block
 import torch.nn as nn
 import torch.nn.functional as F
 import torch

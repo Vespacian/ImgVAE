@@ -13,8 +13,8 @@ import torch.nn as nn
 import pickle
 
 
-from imgvae import VAE_Conv
-from functions import validate_one_epoch, train_one_epoch
+from model.imgvae import VAE_Conv
+from util.functions import validate_one_epoch, train_one_epoch
 # from utils.dataset import CoordinateDataset
 # from utils.functions import vae_loss
 # from utils.options import get_options

@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
 
-from encoder import Conv6_Encoder
-from decoder import Conv6_Decoder
+from model.encoder import Conv6_Encoder
+from model.decoder import Conv6_Decoder
 
 # get the dims right, 
 # cifar10 - color images, assume 100x100 img for now
