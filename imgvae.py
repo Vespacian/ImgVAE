@@ -5,7 +5,7 @@ from encoder import Conv6_Encoder
 from decoder import Conv6_Decoder
 
 # get the dims right, 
-# cfar10 - color images, assume 100x100 img for now
+# cifar10 - color images, assume 100x100 img for now
 # need convolutional code
 # deconv - the inverse of convolution in the decoder (you should see this in the decoder)
 # in pytorch convo2D - something like that
@@ -28,24 +28,10 @@ class VAE_Conv(nn.Module):
         self.decoder = Conv6_Decoder(latent_space = self.latent_space).to(device)
         
         
-    def reparameterize(self, mu, log_var):
-        '''
-        Input arguments:
-        1. mu - mean coming from the encoder's latent space
-        2. log_var - log variance coming from the encoder's latent space
-        '''
-        # Compute standard deviation using 'log_var'-
+    def reparameterize(self, mean, log_var):
         std = torch.exp(0.5 * log_var)
-        
-        # 'eps' samples from a normal standard distribution to add
-        # stochasticity to the sampling process-
         eps = torch.randn_like(std)
-        
-        # Reparameterization trick - sample as if it's from the input
-        # space-
-        sample = mu + (std * eps)
-        
-        return sample
+        return mean + (std * eps)
     
     
     def forward(self, x):
