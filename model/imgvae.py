@@ -10,21 +10,19 @@ from model.decoder import Conv6_Decoder
 # deconv - the inverse of convolution in the decoder (you should see this in the decoder)
 # in pytorch convo2D - something like that
 
-class VAE_Conv(nn.Module):
-    def __init__(self, latent_space = 5):
-        super(VAE_Conv, self).__init__()
+class ImgVAE(nn.Module):
+    def __init__(self, hidden_dim=32, latent_space = 16):
+        super(ImgVAE, self).__init__()
         
         self.latent_space = latent_space
+        self.hidden_dim = hidden_dim
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
-        # Encoder-
         self.encoder = Conv6_Encoder(latent_space = self.latent_space).to(device)
-        
-        # Two additional layers 'hidden2mu' & 'hidden2log' to convert the bottleneck into the μ and σ vectors-
         self.hidden2mu = nn.Linear(in_features = latent_space, out_features = latent_space, bias = True)
         self.hidden2log_var = nn.Linear(in_features = latent_space, out_features = latent_space, bias = True)
-        
-        # Decoder-
+        # self.hidden2mu = nn.Linear(in_features = latent_space, out_features = latent_space, bias = True)
+        # self.hidden2log_var = nn.Linear(in_features = latent_space, out_features = latent_space, bias = True)
         self.decoder = Conv6_Decoder(latent_space = self.latent_space).to(device)
         
         
@@ -35,29 +33,15 @@ class VAE_Conv(nn.Module):
     
     
     def forward(self, x):
-        # Encode input data-
-        x = self.encoder(x)
-        # NOTE: The line of code above does NOT give us the latent vector!
-        
-        # print(f"encoder's output x.shape: {x.shape}")
-        
-        mu = self.hidden2mu(x)
-        log_var = self.hidden2log_var(x)
-        
-        # Obtain the latent vector using reparameterization-
-        z = self.reparameterize(mu, log_var)
-        # latent vector 'z' is obtained through reparameterization trick using mu and log_var
-        
-        '''
-        print(f"mu.shape: {mu.shape}, log_var.shape: {log_var.shape} &"
-              f" z.shape: {z.shape}")
-        '''
-        
-        # Decode latent vector-
+        new_x = self.encoder(x)
+        mean = self.hidden2mu(new_x)
+        log_var = self.hidden2log_var(new_x)
+        z = self.reparameterize(mean, log_var)
         recon_data = torch.sigmoid(self.decoder(z))
-        # recon_data = torch.tanh(self.decoder(z))
-        # x = self.decoder(z)
-        # recon_data = torch.sigmoid(x) # or, tanh
-        
-        return recon_data, mu, log_var
+        return recon_data, mean, log_var
 
+    def sample(self, num_samples, seq_length=None, device='cpu'):
+        z = torch.randn(num_samples, self.latent_dim).to(device)
+        with torch.no_grad():
+            generated = self.decoder(z, seq_length=seq_length)
+        return generated

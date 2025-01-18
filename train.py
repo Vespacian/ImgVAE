@@ -1,328 +1,131 @@
 import os
 
 import torch
-import torch.optim as optim
+# import torch.optim as optim
 from torch.utils.data import DataLoader
 import numpy as np
 import matplotlib.pyplot as plt
 
-import torchvision
-import torchvision.transforms as transforms
-import seaborn as sns
-import torch.nn as nn
-import pickle
+from model.imgvae import ImgVAE
+from utils.distributions import link_batch
+from utils.dataset import CoordinateDataset
+from utils.functions import vae_loss
+from utils.options import get_options
+from utils.distributions import link_batch
 
+def plot_losses(losses, opts):
+    # Plot data
+    epoch_range = np.arange(opts.num_epochs)
+    plt.plot(epoch_range, losses['total'], label='Total loss')
+    plt.plot(epoch_range, losses['recon'], label='Reconstruction loss')
+    plt.plot(epoch_range, losses['kl'], label='KL loss')
 
-from model.imgvae import VAE_Conv
-from util.functions import validate_one_epoch, train_one_epoch
-# from utils.dataset import CoordinateDataset
-# from utils.functions import vae_loss
-# from utils.options import get_options
-# from utils.distributions import link_batch
+    # Label plot
+    plt.title(f"Training Loss (h={opts.hidden_dim}, l={opts.latent_dim})")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.legend()
 
-    
-def viz_losses(train_history):
-    with open("VAE_Conv_CIFAR10_training_history.pkl", "wb") as file:
-        pickle.dump(train_history, file)
-    
-    # VAE Training Visualization-
-    plt.figure(figsize = (9, 7))
-    plt.plot([train_history[x]['train_loss'] for x in train_history.keys()], label = 'train_loss')
-    plt.plot([train_history[x]['val_loss'] for x in train_history.keys()], label = 'val_loss')
-    plt.legend(loc = 'best')
-    plt.title("VAE-Convolutional: CIFAR-10 Training Visualizations")
-    plt.show()
-    
-    # VAE Training Visualization-
-    plt.figure(figsize = (9, 7))
-    plt.plot([train_history[x]['train_logvar'] for x in train_history.keys()], label = 'train_logvar')
-    plt.plot([train_history[x]['val_logvar'] for x in train_history.keys()], label = 'val_logvar')
-    plt.legend(loc = 'best')
-    plt.title("VAE-Convolutional: (log_var) CIFAR-10 Training Visualizations")
-    plt.show()
-    
-    # VAE Training Visualization-
-    plt.figure(figsize = (9, 7))
-    plt.plot([train_history[x]['train_mu'] for x in train_history.keys()], label = 'mu_train')
-    plt.plot([train_history[x]['val_mu'] for x in train_history.keys()], label = 'mu_val')
-    plt.legend(loc = 'best')
-    plt.title("VAE-Convolutional: (mu) CIFAR-10 Training Visualizations")
-    plt.show()
+    # Save plot
+    result_dir = os.path.join(opts.result_dir, 'plots')
+    if not os.path.exists(result_dir):
+        os.makedirs(result_dir)
+    plt.savefig(os.path.join(result_dir, f'losses_{opts.run_name}.png'), format='png')
+    plt.close()
+
+# Utility function for sampling from the VAE
+def plot_samples(model, opts, num_samples=5):
+    # Sample from model
+    model.eval()
+    sequence_length = opts.graph_size
+
+    with torch.no_grad():
+        sampled_sequences = model.sample(num_samples=num_samples, seq_length=sequence_length, device=opts.device)
+
+    # Plot each sequence
+    sampled_sequences_np = sampled_sequences.cpu().numpy()
+    fig, ax = plt.subplots(figsize=(8, 6))
+    for i, seq in enumerate(sampled_sequences_np):
+        x = seq[:, 0]
+        y = seq[:, 1]
+        ax.scatter(x, y, marker='o', label=f"Sample {i+1}")
+
+    # Label plot
+    ax.set_title(f"Sampled Sequences (h={opts.hidden_dim}, l={opts.latent_dim})")
+    ax.grid(True)
+    ax.legend()
+
+    # Save plot
+    result_dir = os.path.join(opts.result_dir, 'plots')
+    if not os.path.exists(result_dir):
+        os.makedirs(result_dir)
+    plt.savefig(os.path.join(result_dir, f'samples_{opts.run_name}.png'), format='png')
+    plt.close()
     
 # Main run function
-def run():    
+def run(opts):    
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f'Available device is {device}')
-    
-    # hyperparams
-    num_epochs = 50
-    batch_size = 32
-    learning_rate = 0.001
     
     # model stuff now
-    model = VAE_Conv(latent_space = 200).to(device)
-    
-
-    
-
-
-    alpha = 1
+    model = ImgVAE(opts.latent_space).to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr = 0.001)
+    # criterion = nn.MSELoss(reduction = 'sum')
+    # alpha = 1
     # Python dict to contain training metrics-
-    train_history = {}
-    optimizer = torch.optim.Adam(model.parameters(), lr = learning_rate)
-    criterion = nn.MSELoss(reduction = 'sum')
+    losses = {}
     
     # training loop
-    for epoch in range(1, num_epochs + 1):
-        # Train model for 1 epoch-
-        train_epoch_loss, mu_train, logvar_train = train_one_epoch(
-            model = model, dataloader = train_loader,
-            alpha = alpha, device=device, 
-            train_dataset = train_dataset, optimizer = optimizer, criterion=criterion
-        )
+    for epoch in range(1, opts.num_epochs + 1):
+        # Train with random data
+        LINK_VALUES = [1, 5, 10, 15]
+        lbatch_size = opts.epoch_size // len(LINK_VALUES)
+        data = np.zeros((opts.epoch_size, opts.graph_size, opts.element_dim))
+        for i, link_size in enumerate(LINK_VALUES):
+            data[i*lbatch_size:(i+1)*lbatch_size] = link_batch(lbatch_size, opts.graph_size, link_size=link_size, noise=0.05)
+
+        idx = np.arange(opts.epoch_size)
+        np.random.shuffle(idx)
+        data = data[idx]
         
-        # Get validation metrics-
-        val_epoch_loss, mu_val, logvar_val = validate_one_epoch(
-            model = model, dataloader = test_loader,
-            alpha = alpha, device=device, test_dataset=test_dataset, criterion=criterion
-        )
+        # sorting data by increasing values of x
+        sorted_indicies = np.argsort(data[:, :, 0], axis=1)
+        sorted_data = np.take_along_axis(data, sorted_indicies[:, :, None], axis=1)
         
-        # Retrieve model performance metrics-
-        logvar_train = logvar_train.mean().detach().cpu().numpy()
-        logvar_val = logvar_val.mean().detach().cpu().numpy()
-        mu_train = mu_train.mean().detach().cpu().numpy()
-        mu_val = mu_val.mean().detach().cpu().numpy()
-
-        # Store model performance metrics in Python3 dict-
-        train_history[epoch] = {
-            'train_loss': train_epoch_loss,
-            'val_loss': val_epoch_loss,
-            'train_logvar': logvar_train,
-            'val_logvar': logvar_val,
-            'train_mu': mu_train,
-            'val_mu': mu_val
-        }
-
-        print(f"Epoch = {epoch}; train loss = {train_epoch_loss:.4f},"
-        f"test loss = {val_epoch_loss:.4f}, train_logvar = {logvar_train:.6f}"
-        f", train_mu = {mu_train:.6f}, val_logvar = {logvar_val:.6f} &"
-        f" val_mu = {mu_val:.6f}")
-    
-    torch.save(model.state_dict(), 'results/VAE_Conv_CIFAR10_Trained_Weights.pth')
-    viz_losses(train_history)
-
-def old_run():
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f'Available device is {device}')
-    
-    # hyperparams
-    num_epochs = 50
-    batch_size = 32
-    learning_rate = 0.001
-    
-    # model stuff now
-    model = VAE_Conv(latent_space = 200).to(device)
-    
-    # run the sample from the example
-    # run_sample(batch_size, device, model)
-    
-    
-    transform_train = transforms.Compose(
-    [
-        transforms.RandomCrop(32, padding = 4),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-        # transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-        ]
-    )   
-
-    transform_test = transforms.Compose(
-        [
-        transforms.ToTensor(),
-        # transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-        ]
-    )
-    # load the cifar10 dataset
-    train_dataset = torchvision.datasets.CIFAR10(
-        root = './data', train = True,
-        # root = path_to_data + "data", train = True,
-        download = True, transform = transform_train
-        )
-
-    test_dataset = torchvision.datasets.CIFAR10(
-        root = './data', train = False,
-        # root = path_to_data + "data", train = True,
-        download = True, transform = transform_test
-        )
-    
-    train_loader = torch.utils.data.DataLoader(
-        train_dataset, batch_size = batch_size,
-        shuffle = True
-        )
-
-    test_loader = torch.utils.data.DataLoader(
-        test_dataset, batch_size = batch_size,
-        shuffle = False
-        )
-    # Specify alpha - Hyperparameter to control the importance of reconstruction
-    # loss vs KL-Divergence Loss-
-    alpha = 1
-    # Python dict to contain training metrics-
-    train_history = {}
-    optimizer = torch.optim.Adam(model.parameters(), lr = learning_rate)
-    criterion = nn.MSELoss(reduction = 'sum')
-    
-    # training loop
-    for epoch in range(1, num_epochs + 1):
-        # Train model for 1 epoch-
-        train_epoch_loss, mu_train, logvar_train = train_one_epoch(
-            model = model, dataloader = train_loader,
-            alpha = alpha, device=device, 
-            train_dataset = train_dataset, optimizer = optimizer, criterion=criterion
-        )
+        # confirm data was sorted properly
+        x_vals = sorted_data[:, :, 0] 
+        assert np.all(np.diff(x_vals, axis=1) >= 0), "x values are not sorted in non decreasing order"
         
-        # Get validation metrics-
-        val_epoch_loss, mu_val, logvar_val = validate_one_epoch(
-            model = model, dataloader = test_loader,
-            alpha = alpha, device=device, test_dataset=test_dataset, criterion=criterion
-        )
+        dataset = CoordinateDataset(sorted_data)
+        dataloader = DataLoader(dataset, batch_size=opts.batch_size, shuffle=True, pin_memory=True)
+        for batch in dataloader:
+            batch = batch.to(opts.device)
+            
+            optimizer.zero_grad()
+            out, mean, log_var = model(batch)
+            loss, rl, kl = vae_loss(out, batch, mean, log_var, epoch)
+            loss.backward()
+            optimizer.step()
         
-        # Retrieve model performance metrics-
-        logvar_train = logvar_train.mean().detach().cpu().numpy()
-        logvar_val = logvar_val.mean().detach().cpu().numpy()
-        mu_train = mu_train.mean().detach().cpu().numpy()
-        mu_val = mu_val.mean().detach().cpu().numpy()
+        # Save and log losses
+        losses['total'].append(loss.item())
+        losses['recon'].append(rl.item())
+        losses['kl'].append(kl.item())
+        print(f"Epoch {epoch+1}, Loss: {loss.item():.4f}, Recon: {rl.item():.4f}, KL: {kl.item():.4f}")
 
-        # Store model performance metrics in Python3 dict-
-        train_history[epoch] = {
-            'train_loss': train_epoch_loss,
-            'val_loss': val_epoch_loss,
-            'train_logvar': logvar_train,
-            'val_logvar': logvar_val,
-            'train_mu': mu_train,
-            'val_mu': mu_val
-        }
+    # Plotting results
+    plot_losses(losses, opts)
+    plot_samples(model, opts)
+    print("Training complete and plots saved")
 
-        print(f"Epoch = {epoch}; train loss = {train_epoch_loss:.4f},"
-        f"test loss = {val_epoch_loss:.4f}, train_logvar = {logvar_train:.6f}"
-        f", train_mu = {mu_train:.6f}, val_logvar = {logvar_val:.6f} &"
-        f" val_mu = {mu_val:.6f}")
-    
-    torch.save(model.state_dict(), 'results/VAE_Conv_CIFAR10_Trained_Weights.pth')
-    viz_losses(train_history)
-
-def run_sample(batch_size, device, model):
-    # define transformations
-    transform_train = transforms.Compose(
-    [
-        transforms.RandomCrop(32, padding = 4),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-        # transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-        ]
-    )   
-
-    transform_test = transforms.Compose(
-        [
-        transforms.ToTensor(),
-        # transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-        ]
-    )
-    
-    # load the cifar10 dataset
-    train_dataset = torchvision.datasets.CIFAR10(
-        root = './data', train = True,
-        # root = path_to_data + "data", train = True,
-        download = True, transform = transform_train
-        )
-
-    test_dataset = torchvision.datasets.CIFAR10(
-        root = './data', train = False,
-        # root = path_to_data + "data", train = True,
-        download = True, transform = transform_test
-        )
-    
-    train_loader = torch.utils.data.DataLoader(
-        train_dataset, batch_size = batch_size,
-        shuffle = True
-        )
-
-    test_loader = torch.utils.data.DataLoader(
-        test_dataset, batch_size = batch_size,
-        shuffle = False
-        )
-    
-    print(f"Sizes of train_dataset: {len(train_dataset)} and test_dataet: {len(test_dataset)}")
-    print(f"Sizes of train_loader: {len(train_loader)} and test_loader: {len(test_loader)}")
-    print(f"len(train_loader) = {len(train_loader)} & len(test_loader) = {len(test_loader)}")
-    print(len(train_dataset) / batch_size, len(test_dataset) / batch_size)
-    
-    # Get some random batch of training images & labels-
-    images, labels = next(iter(train_loader))
-
-    # You get 64 images due to the specified batch size-
-    print(f"images.shape: {images.shape} & labels.shape: {labels.shape}")
-    
-    images = images / 2 + 0.5
-    images = np.transpose(images.numpy(), (0, 2, 3, 1))
-    print(images.shape)
-    
-    # plot a sample image
-    print("sample image: ", images[0].shape)
-    plt.figure(figsize = (7, 6))
-    plt.imshow(images[0])
-    plt.show()
-    
-    # Visualize 10 images from training set-
-    for i in range(10):
-        plt.subplot(2, 5, i + 1)    # 2 rows & 5 columns
-        plt.imshow(images[i])
-        
-    plt.suptitle("Sample CIFAR-10 training images")
-    plt.show()
-    
-    # prechecks
-    print(model)
-    
-    # Count number of layer-wise parameters and total parameters-
-    tot_params = 0
-    for param in model.parameters():
-        print(f"layer.shape = {param.shape} has {param.nelement()} parameters")
-        tot_params += param.nelement()
-    
-    print(f"Total number of parameters in VAE Dense model = {tot_params}")
-    
-    # sanity checks
-    for x in model.hidden2mu.parameters():
-        print(x.shape, x.nelement())
-        
-    log_var_wts = model.hidden2log_var.weight
-    mu_wts = model.hidden2mu.weight
-    
-    mu_wts = mu_wts.detach().cpu().numpy()
-    log_var_wts = log_var_wts.detach().cpu().numpy()
-    
-    mu_wts.shape, log_var_wts.shape
-    sns.displot(data = mu_wts.flatten(), bins = int(np.ceil(np.sqrt(mu_wts.size))))
-    plt.title("mu randomly initialized - Visualization")
-    plt.show()
-    
-    sns.displot(data = log_var_wts.flatten(), bins = int(np.ceil(np.sqrt(log_var_wts.size))))
-    plt.title("log variance randomly initialized - Visualization")
-    plt.show()
-    
-    # images = images.to(device)
-    # print(images.shape)
-    # print(images.min(), images.max())
-    # recon_images, mu, log_var = model(images)
-    # print(recon_images.shape, mu.shape, log_var.shape)
-    # print(recon_images.min().detach().cpu().numpy(), recon_images.max().detach().cpu().numpy())
-
+    # Save model
+    result_dir = os.path.join(opts.result_dir, 'models')
+    if not os.path.exists(result_dir):
+        os.makedirs(result_dir)
+    model_path = os.path.join(result_dir, f'model_{opts.run_name}.pth')
+    model = model.cpu()
+    torch.save(model.state_dict(), model_path)
+    print("Model saved")
 
 # Program entrypoint
 if __name__ == "__main__":
-    run()
+    run(get_options())
