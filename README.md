@@ -30,5 +30,5 @@ python train.py --run_name myrun --run_timestamp
 Following is a standard training command which provides fair results:
 
 ```
-python train.py --epoch_size 262144 --batch_size 256 --latent_dim 1024 --num_epochs 100 --run_name my-model-name --run_timestamp
+python train.py --epoch_size 2048 --batch_size 256 --graph_size 32 --latent_dim 1024 --num_epochs 100 --run_name my-model-name --run_timestamp
 ```

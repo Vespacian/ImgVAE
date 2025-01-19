@@ -11,22 +11,20 @@ from model.decoder import Conv6_Decoder
 # in pytorch convo2D - something like that
 
 class ImgVAE(nn.Module):
-    def __init__(self, latent_space = 16):
+    def __init__(self, latent_dim = 16):
         super(ImgVAE, self).__init__()
         
-        self.latent_space = latent_space
+        self.latent_dim = latent_dim
         
-        self.encoder = Conv6_Encoder(latent_space = self.latent_space)
-        self.hidden2mu = nn.Linear(in_features = self.latent_space, out_features = latent_space, bias = True)
-        self.hidden2log_var = nn.Linear(in_features = self.latent_space, out_features = latent_space, bias = True)
-        self.decoder = Conv6_Decoder(latent_space = self.latent_space)
-        
+        self.encoder = Conv6_Encoder(latent_space = self.latent_dim)
+        self.hidden2mu = nn.Linear(in_features = self.latent_dim, out_features = latent_dim, bias = True)
+        self.hidden2log_var = nn.Linear(in_features = self.latent_dim, out_features = latent_dim, bias = True)
+        self.decoder = Conv6_Decoder(latent_space = self.latent_dim)
         
     def reparameterize(self, mean, log_var):
         std = torch.exp(0.5 * log_var)
         eps = torch.randn_like(std)
         return mean + (std * eps)
-    
     
     def forward(self, x):
         new_x = self.encoder(x)
