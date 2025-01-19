@@ -9,16 +9,16 @@ class Conv6_Encoder(nn.Module):
         super(Conv6_Encoder, self).__init__()
         self.latent_space = latent_space
         
-        self.block1 = cnn_block(input_channels = 3, output_channels = 64)
+        self.block1 = cnn_block(input_channels = 1, output_channels = 64)
         self.block2 = cnn_block(input_channels = 64, output_channels = 128)
-        self.block3 = cnn_block(input_channels = 128, output_channels = 256)
+        # self.block3 = cnn_block(input_channels = 128, output_channels = 256)
         self.conv_layer = nn.Conv2d(
-            in_channels = 256, out_channels = 256,
+            in_channels = 128, out_channels = 256,
             kernel_size = 3, stride = 1,
-            padding = 0, bias = True
+            padding = 1, bias = True
         )
         self.dense_layer1 = nn.Linear(
-            in_features = 1024, out_features = 500,
+            in_features = 256*25*25, out_features = 500,
             bias = True
         )
         self.op_layer = nn.Linear(
@@ -29,7 +29,7 @@ class Conv6_Encoder(nn.Module):
     def forward(self, x):
         x = self.block1(x)
         x = self.block2(x)
-        x = self.block3(x)
+        # x = self.block3(x)
         x = F.leaky_relu(self.conv_layer(x))
         x = torch.flatten(x, start_dim = 1)
         x = F.leaky_relu(self.dense_layer1(x))

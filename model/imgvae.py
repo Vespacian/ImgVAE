@@ -11,19 +11,15 @@ from model.decoder import Conv6_Decoder
 # in pytorch convo2D - something like that
 
 class ImgVAE(nn.Module):
-    def __init__(self, hidden_dim=32, latent_space = 16):
+    def __init__(self, latent_space = 16):
         super(ImgVAE, self).__init__()
         
         self.latent_space = latent_space
-        self.hidden_dim = hidden_dim
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
-        self.encoder = Conv6_Encoder(latent_space = self.latent_space).to(device)
-        self.hidden2mu = nn.Linear(in_features = latent_space, out_features = latent_space, bias = True)
-        self.hidden2log_var = nn.Linear(in_features = latent_space, out_features = latent_space, bias = True)
-        # self.hidden2mu = nn.Linear(in_features = latent_space, out_features = latent_space, bias = True)
-        # self.hidden2log_var = nn.Linear(in_features = latent_space, out_features = latent_space, bias = True)
-        self.decoder = Conv6_Decoder(latent_space = self.latent_space).to(device)
+        self.encoder = Conv6_Encoder(latent_space = self.latent_space)
+        self.hidden2mu = nn.Linear(in_features = self.latent_space, out_features = latent_space, bias = True)
+        self.hidden2log_var = nn.Linear(in_features = self.latent_space, out_features = latent_space, bias = True)
+        self.decoder = Conv6_Decoder(latent_space = self.latent_space)
         
         
     def reparameterize(self, mean, log_var):
@@ -40,8 +36,9 @@ class ImgVAE(nn.Module):
         recon_data = torch.sigmoid(self.decoder(z))
         return recon_data, mean, log_var
 
-    def sample(self, num_samples, seq_length=None, device='cpu'):
+    def sample(self, num_samples=1, device='cpu'):
         z = torch.randn(num_samples, self.latent_dim).to(device)
         with torch.no_grad():
-            generated = self.decoder(z, seq_length=seq_length)
+            generated = self.decoder(z)
+            generated = torch.sigmoid(generated)
         return generated

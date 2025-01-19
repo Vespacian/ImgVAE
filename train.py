@@ -8,8 +8,8 @@ import matplotlib.pyplot as plt
 
 from model.imgvae import ImgVAE
 from utils.distributions import link_batch
-from utils.dataset import CoordinateDataset
-from utils.functions import vae_loss
+from utils.dataset import ImageDataset
+from utils.functions import vae_loss, minmax_normalize, coords_to_image
 from utils.options import get_options
 from utils.distributions import link_batch
 
@@ -38,22 +38,32 @@ def plot_samples(model, opts, num_samples=5):
     # Sample from model
     model.eval()
     sequence_length = opts.graph_size
-
+    
     with torch.no_grad():
-        sampled_sequences = model.sample(num_samples=num_samples, seq_length=sequence_length, device=opts.device)
+        sampled_images = model.sample(num_samples=5, device=opts.device)  # (5,1,100,100)
+    sampled_images = sampled_images.squeeze(1).cpu().numpy()          # (5,100,100)
 
-    # Plot each sequence
-    sampled_sequences_np = sampled_sequences.cpu().numpy()
-    fig, ax = plt.subplots(figsize=(8, 6))
-    for i, seq in enumerate(sampled_sequences_np):
-        x = seq[:, 0]
-        y = seq[:, 1]
-        ax.scatter(x, y, marker='o', label=f"Sample {i+1}")
+    for i in range(5):
+        plt.imshow(sampled_images[i], cmap='gray')
+        plt.title(f"Sampled Sequences (h={opts.hidden_dim}, l={opts.latent_dim})")
+        plt.legend()
+        plt.show()
+
+    # with torch.no_grad():
+    #     sampled_sequences = model.sample(num_samples=num_samples, seq_length=sequence_length, device=opts.device)
+
+    # # Plot each sequence
+    # sampled_sequences_np = sampled_sequences.cpu().numpy()
+    # fig, ax = plt.subplots(figsize=(8, 6))
+    # for i, seq in enumerate(sampled_sequences_np):
+    #     x = seq[:, 0]
+    #     y = seq[:, 1]
+    #     ax.scatter(x, y, marker='o', label=f"Sample {i+1}")
 
     # Label plot
-    ax.set_title(f"Sampled Sequences (h={opts.hidden_dim}, l={opts.latent_dim})")
-    ax.grid(True)
-    ax.legend()
+    # ax.set_title(f"Sampled Sequences (h={opts.hidden_dim}, l={opts.latent_dim})")
+    # ax.grid(True)
+    # ax.legend()
 
     # Save plot
     result_dir = os.path.join(opts.result_dir, 'plots')
@@ -61,18 +71,20 @@ def plot_samples(model, opts, num_samples=5):
         os.makedirs(result_dir)
     plt.savefig(os.path.join(result_dir, f'samples_{opts.run_name}.png'), format='png')
     plt.close()
-    
+
+
+   
 # Main run function
 def run(opts):    
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
-    # model stuff now
-    model = ImgVAE(opts.latent_space).to(device)
+    model = ImgVAE(opts.latent_dim).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr = 0.001)
-    # criterion = nn.MSELoss(reduction = 'sum')
-    # alpha = 1
-    # Python dict to contain training metrics-
-    losses = {}
+    losses = {
+        'total': [],
+        'recon': [],
+        'kl': []
+    }
     
     # training loop
     for epoch in range(1, opts.num_epochs + 1):
@@ -95,7 +107,10 @@ def run(opts):
         x_vals = sorted_data[:, :, 0] 
         assert np.all(np.diff(x_vals, axis=1) >= 0), "x values are not sorted in non decreasing order"
         
-        dataset = CoordinateDataset(sorted_data)
+        # normalize and convert to img
+        images = coords_to_image(minmax_normalize(sorted_data))
+        
+        dataset = ImageDataset(images)
         dataloader = DataLoader(dataset, batch_size=opts.batch_size, shuffle=True, pin_memory=True)
         for batch in dataloader:
             batch = batch.to(opts.device)
